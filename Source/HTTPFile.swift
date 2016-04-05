@@ -26,6 +26,12 @@
 @_exported import HTTP
 
 public struct FileResponder: Responder {
+    public enum Error : ErrorProtocol {
+        case notFound(path: String)
+        case isDirectory(path: String)
+        case readFailure(path: String, error: ErrorProtocol)
+    }
+
     let path: String
 
     public init(path: String) {
@@ -47,12 +53,20 @@ public struct FileResponder: Responder {
             path += "index.html"
         }
 
-        return Response(status: .ok, filePath: self.path + path)
+        return try Response(status: .ok, filePath: self.path + path)
     }
 }
 
 extension Response {
-    public init(status: Status = .ok, headers: Headers = [:], filePath: String) {
+    public init(status: Status = .ok, headers: Headers = [:], filePath: String) throws {
+        switch (File.exists(at: filePath)) {
+        case (exists: false, _):
+            throw FileResponder.Error.notFound(path: filePath)
+        case (_, isDirectory: true):
+            throw FileResponder.Error.isDirectory(path: filePath)
+        default: break
+        }
+
         do {
             let file = try File(path: filePath, mode: .read)
             self.init(status: status, headers: headers, body: file.stream)
@@ -64,7 +78,8 @@ extension Response {
             }
 
         } catch {
-            self.init(status: .notFound)
+            throw FileResponder.Error.readFailure(path: filePath,
+                                                  error: error)
         }
     }
 }
